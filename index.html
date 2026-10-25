@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f6f5fb">
+<title>透過PNGメーカー</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif;color:#242238;background:#f6f5fb}
+*{box-sizing:border-box}body{margin:0;padding:18px 14px 32px;max-width:720px;margin-inline:auto}
+h1{font-size:25px;margin:8px 0 4px} .sub{color:#69677b;font-size:14px;margin:0 0 18px}
+.card{background:white;border:1px solid #e8e5f0;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 3px 12px #30234d0a}
+label{display:block;font-size:14px;font-weight:650;margin-bottom:7px}
+input[type=file],input[type=number],input[type=range],select{width:100%}
+input[type=number],select{border:1px solid #d9d5e5;border-radius:11px;padding:12px;font-size:16px;background:white;color:#242238}
+button{border:0;border-radius:12px;padding:13px 15px;font-size:15px;font-weight:700;cursor:pointer}
+.primary{background:#6252d9;color:white;width:100%;margin-top:12px}.secondary{background:#eeebfa;color:#40358e}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.row{display:flex;align-items:center;gap:10px}.row label{margin:0}
+.preview{display:flex;align-items:center;justify-content:center;min-height:210px;border-radius:14px;overflow:hidden;background-color:#fff;background-image:linear-gradient(45deg,#e9e9ef 25%,transparent 25%),linear-gradient(-45deg,#e9e9ef 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e9e9ef 75%),linear-gradient(-45deg,transparent 75%,#e9e9ef 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
+.preview img{max-width:100%;max-height:380px;object-fit:contain}
+#cropCanvas{display:block;width:100%;height:auto;max-height:65vh;object-fit:contain;touch-action:none;cursor:crosshair} .cropWrap{background:#eee;border-radius:12px;overflow:hidden}
+.small{font-size:12px;color:#77748a;line-height:1.55}.status{font-size:13px;margin-top:8px;color:#4e4774}
+#canvas{display:none}.pill{display:inline-block;border-radius:99px;background:#f0edfc;padding:5px 9px;font-size:12px;color:#5143ad;margin-bottom:8px}
+@media(max-width:380px){.grid{gap:8px}.card{padding:13px}}
+</style>
+</head>
+<body>
+<div class="pill">iPhone向け・無料</div>
+<h1>透過PNGメーカー</h1>
+<p class="sub">画像を選んで、背景を透過して、好きなピクセルサイズで保存。</p>
+<div class="card">
+  <label for="file">① 画像を選ぶ</label>
+  <input id="file" type="file" accept="image/*">
+  <p class="small">写真アプリまたは「ファイル」から選べます。処理はこの端末内で行います。</p>
+</div>
+<div class="card">
+  <label>② カットする範囲を選ぶ</label>
+  <p class="small">画像の上を指でなぞって、残したい範囲を四角く囲んでください。選択した範囲だけを切り出してから、透過・サイズ変更します。</p>
+  <div class="cropWrap"><canvas id="cropCanvas" width="1" height="1"></canvas></div>
+  <div class="row" style="margin-top:10px;gap:8px">
+    <button class="secondary" id="resetCrop" type="button">全体に戻す</button>
+    <span class="small" id="cropInfo">画像を選ぶと範囲指定できます</span>
+  </div>
+</div>
+<div class="card">
+  <label>③ 背景を透明にする</label>
+  <div class="row" style="margin:8px 0 14px">
+    <input id="remove" type="checkbox" checked style="width:20px;height:20px">
+    <label for="remove">画像の四隅とつながる背景色を透過</label>
+  </div>
+  <label for="tolerance">透過の強さ：<span id="tolText">35</span></label>
+  <input id="tolerance" type="range" min="0" max="120" value="35">
+  <p class="small">白など単色の背景向けです。背景が複雑な写真を完全に切り抜くAI機能ではありません。元画像の透明部分は維持します。</p>
+</div>
+<div class="card">
+  <label>④ 保存サイズ（px）</label>
+  <div class="grid">
+    <div><label for="width">幅</label><input id="width" type="number" min="1" max="4096" value="320"></div>
+    <div><label for="height">高さ</label><input id="height" type="number" min="1" max="4096" value="320"></div>
+  </div>
+  <div class="row" style="margin-top:13px">
+    <input id="lock" type="checkbox" checked style="width:20px;height:20px">
+    <label for="lock">縦横比を固定</label>
+  </div>
+  <div class="grid" style="margin-top:13px">
+    <button class="secondary" data-size="320,320">Discord 320×320</button>
+    <button class="secondary" data-size="370,320">LINEスタンプ目安 370×320</button>
+    <button class="secondary" data-size="112,112">Twitch 112×112</button>
+    <button class="secondary" data-size="512,512">512×512</button>
+  </div>
+</div>
+<div class="card">
+  <label>⑤ 画像処理を開始</label>
+  <p class="small">画像を選んだだけでは処理しません。「処理を開始」を押すと、進行状況を表示します。</p>
+  <button class="primary" id="start">画像処理を開始</button>
+  <div id="progressWrap" style="display:none;margin-top:12px">
+    <div style="height:9px;background:#ece9f5;border-radius:99px;overflow:hidden"><div id="progressBar" style="height:100%;width:0%;background:#6252d9;transition:width .15s"></div></div>
+    <div class="status" id="progressText">準備中…</div>
+  </div>
+</div>
+<div class="card">
+  <label>⑥ プレビュー</label>
+  <div class="preview" id="preview"><span class="small">画像を選ぶとここに表示されます</span></div>
+  <div class="status" id="info">画像未選択</div>
+  <button class="primary" id="save" disabled>透過PNGを保存</button>
+  <p class="small">保存後、共有メニューから「画像を保存」または「ファイルに保存」を選べます。Safariで開いて使うのがおすすめです。</p>
+</div>
+<canvas id="canvas"></canvas>
+<script>
+const $=id=>document.getElementById(id);
+let original=null, originalW=0, originalH=0, currentURL=null, renderToken=0, processedCanvas=null;
+let crop={x:0,y:0,w:0,h:0}, cropDrag=null, cropDisplayScale=1;
+const cropCanvas=$('cropCanvas'), cropCtx=cropCanvas.getContext('2d');
+$('tolerance').addEventListener('input',()=>{$('tolText').textContent=$('tolerance').value;processedCanvas=null;$('save').disabled=true;});
+function drawCrop(){if(!original)return;const maxW=680,maxH=650;cropDisplayScale=Math.min(maxW/originalW,maxH/originalH,1);cropCanvas.width=Math.max(1,Math.round(originalW*cropDisplayScale));cropCanvas.height=Math.max(1,Math.round(originalH*cropDisplayScale));cropCtx.clearRect(0,0,cropCanvas.width,cropCanvas.height);cropCtx.drawImage(original,0,0,cropCanvas.width,cropCanvas.height);const x=crop.x*cropDisplayScale,y=crop.y*cropDisplayScale,w=crop.w*cropDisplayScale,h=crop.h*cropDisplayScale;cropCtx.fillStyle='rgba(20,20,30,.45)';cropCtx.fillRect(0,0,cropCanvas.width,cropCanvas.height);cropCtx.clearRect(x,y,w,h);cropCtx.drawImage(original,crop.x,crop.y,crop.w,crop.h,x,y,w,h);cropCtx.strokeStyle='#6b5cff';cropCtx.lineWidth=Math.max(2,cropCanvas.width/300);cropCtx.strokeRect(x,y,w,h);$('cropInfo').textContent=`選択範囲：${Math.round(crop.w)} × ${Math.round(crop.h)}px`; }
+function cropPoint(e){const r=cropCanvas.getBoundingClientRect();return {x:Math.max(0,Math.min(originalW,(e.clientX-r.left)*originalW/r.width)),y:Math.max(0,Math.min(originalH,(e.clientY-r.top)*originalH/r.height))};}
+cropCanvas.addEventListener('pointerdown',e=>{if(!original)return;e.preventDefault();cropCanvas.setPointerCapture(e.pointerId);const p=cropPoint(e);cropDrag={x:p.x,y:p.y};crop={x:p.x,y:p.y,w:1,h:1};drawCrop();});
+cropCanvas.addEventListener('pointermove',e=>{if(!original||!cropDrag)return;const p=cropPoint(e);crop={x:Math.min(cropDrag.x,p.x),y:Math.min(cropDrag.y,p.y),w:Math.max(1,Math.abs(p.x-cropDrag.x)),h:Math.max(1,Math.abs(p.y-cropDrag.y))};drawCrop();});
+function finishCrop(){if(!cropDrag)return;cropDrag=null;crop.x=Math.max(0,Math.floor(crop.x));crop.y=Math.max(0,Math.floor(crop.y));crop.w=Math.max(1,Math.min(originalW-crop.x,Math.ceil(crop.w)));crop.h=Math.max(1,Math.min(originalH-crop.y,Math.ceil(crop.h)));$('width').value=crop.w;$('height').value=crop.h;processedCanvas=null;$('save').disabled=true;drawCrop();}
+cropCanvas.addEventListener('pointerup',finishCrop);cropCanvas.addEventListener('pointercancel',finishCrop);
+$('resetCrop').addEventListener('click',()=>{if(!original)return;crop={x:0,y:0,w:originalW,h:originalH};$('width').value=originalW;$('height').value=originalH;processedCanvas=null;$('save').disabled=true;drawCrop();});
+$('remove').addEventListener('change',()=>{processedCanvas=null;$('save').disabled=true;});
+$('file').addEventListener('change',e=>{
+ const f=e.target.files&&e.target.files[0]; if(!f)return;
+ $('start').disabled=false;
+ if(currentURL)URL.revokeObjectURL(currentURL);
+ currentURL=URL.createObjectURL(f); const img=new Image();
+ $('info').textContent='画像を読み込み中…'; $('preview').innerHTML='<span class="small">画像を読み込んでいます…</span>'; $('start').disabled=false; $('save').disabled=true; processedCanvas=null;
+ img.onload=()=>{
+ if(img.naturalWidth*img.naturalHeight>6000000){alert('この画像はiPhoneで処理するには大きすぎます。写真アプリなどで長辺2500px程度に縮小してから選んでください。');URL.revokeObjectURL(currentURL);currentURL=null;return;}
+ original=img;originalW=img.naturalWidth;originalH=img.naturalHeight;crop={x:0,y:0,w:originalW,h:originalH};drawCrop();
+ $('width').value=originalW;$('height').value=originalH;$('start').disabled=false;
+ $('info').textContent=`画像を読み込みました：${originalW} × ${originalH}px。「画像処理を開始」を押してください。`;
+ $('preview').innerHTML='<span class="small">準備完了。上の「画像処理を開始」を押してください。</span>';};
+ img.onerror=()=>alert('この画像は読み込めませんでした。別の画像を試してください。');
+ img.src=currentURL;
+});
+let changing=false;
+$('width').addEventListener('input',()=>{if(!$('lock').checked||changing||!original)return;changing=true;$('height').value=Math.max(1,Math.round(Number($('width').value)*Math.max(1,crop.h)/Math.max(1,crop.w)));changing=false});
+$('height').addEventListener('input',()=>{if(!$('lock').checked||changing||!original)return;changing=true;$('width').value=Math.max(1,Math.round(Number($('height').value)*Math.max(1,crop.w)/Math.max(1,crop.h)));changing=false});
+document.querySelectorAll('[data-size]').forEach(b=>b.addEventListener('click',()=>{const [w,h]=b.dataset.size.split(',').map(Number);$('width').value=w;$('height').value=h;$('lock').checked=false;processedCanvas=null;$('save').disabled=true;}));
+function yieldUI(){return new Promise(resolve=>setTimeout(resolve,0))}
+async function render(){
+ if(!original)return;
+ const token=++renderToken;
+ $('save').disabled=true;$('start').disabled=true;
+ $('progressWrap').style.display='block';$('progressBar').style.width='2%';$('progressText').textContent='画像を準備中…';
+ $('info').textContent='処理中… この画面を閉じずにお待ちください。';
+ const prev=$('preview');prev.innerHTML='<span class="small">画像を処理しています…</span>';
+ try{
+  // Process on a reduced working canvas to keep peak memory low on iPhones.
+  const cropX=Math.max(0,Math.floor(crop.x)),cropY=Math.max(0,Math.floor(crop.y));
+  const cropW=Math.max(1,Math.min(originalW-cropX,Math.floor(crop.w))),cropH=Math.max(1,Math.min(originalH-cropY,Math.floor(crop.h)));
+  const maxSide=1800,scale=Math.min(1,maxSide/Math.max(cropW,cropH));
+  const w=Math.max(1,Math.round(cropW*scale)),h=Math.max(1,Math.round(cropH*scale));
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  const ctx=c.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(original,cropX,cropY,cropW,cropH,0,0,w,h);
+  if($('remove').checked){
+   const im=ctx.getImageData(0,0,w,h),d=im.data;
+   const ids=[0,(w-1)*4,((h-1)*w)*4,((h*w)-1)*4],cols=ids.map(i=>[d[i],d[i+1],d[i+2]]);
+   // Queue is allocated only at the reduced working resolution.
+   const seen=new Uint8Array(w*h),queue=new Int32Array(w*h);let head=0,tail=0;
+   function add(x,y){if(x<0||y<0||x>=w||y>=h)return;const p=y*w+x;if(seen[p])return;seen[p]=1;queue[tail++]=p}
+   add(0,0);add(w-1,0);add(0,h-1);add(w-1,h-1);
+   const t=Number($('tolerance').value),threshold=t*t*3;
+   // Work in batches so the browser can repaint and remain responsive.
+   while(head<tail){
+    if(token!==renderToken)return;
+    const stop=Math.min(tail,head+25000);
+    while(head<stop){
+     const p=queue[head++],i=p*4;if(d[i+3]===0)continue;
+     let best=Infinity;
+     for(let k=0;k<cols.length;k++){const col=cols[k],dr=d[i]-col[0],dg=d[i+1]-col[1],db=d[i+2]-col[2],dist=dr*dr+dg*dg+db*db;if(dist<best)best=dist}
+     if(best<=threshold){
+      d[i+3]=0;const x=p%w,y=(p/w)|0;
+      if(x>0)add(x-1,y);if(x+1<w)add(x+1,y);if(y>0)add(x,y-1);if(y+1<h)add(x,y+1);
+     }
+    }
+    $('progressBar').style.width=(5+Math.round(85*head/Math.max(1,tail)))+'%';
+    $('progressText').textContent=`背景を確認中… ${Math.round(100*head/Math.max(1,tail))}%`;
+    await yieldUI();
+   }
+   ctx.putImageData(im,0,0);
+  }
+  if(token!==renderToken)return;
+  $('progressBar').style.width='95%';$('progressText').textContent='プレビューを作成中…';await yieldUI();
+  processedCanvas=c;
+  const prev=$('preview');prev.innerHTML='';
+  const img=document.createElement('img');img.src=c.toDataURL('image/png');img.alt='透過プレビュー';prev.appendChild(img);
+  $('info').textContent=`切り出し：${cropW} × ${cropH}px ／ 処理：${w} × ${h}px ／ 保存予定：${$('width').value} × ${$('height').value}px`;
+  $('progressBar').style.width='100%';$('progressText').textContent='完了！PNGを保存できます。';
+  $('info').textContent=`処理完了：切り出し ${cropW} × ${cropH}px ／ 透過処理 ${w} × ${h}px ／ 保存予定 ${$('width').value} × ${$('height').value}px`;
+  $('save').disabled=false;$('start').disabled=false;
+ }catch(err){
+  console.error(err);
+  $('progressBar').style.width='100%';$('progressText').textContent='失敗しました';
+  $('info').textContent='処理できませんでした。画像を小さくして再度お試しください。';
+  prev.innerHTML='<span class="small">処理に失敗しました。長辺1500〜2500px程度の画像でお試しください。</span>';
+  $('start').disabled=false;
+ }
+}
+$('start').addEventListener('click',()=>{if(!original){$('info').textContent='先に「① 画像を選ぶ」から画像を選んでください。';alert('先に画像を選んでください。');return;}render();});
+$('save').addEventListener('click',()=>{
+ if(!original||!processedCanvas)return;
+ const w=Math.floor(Number($('width').value)),h=Math.floor(Number($('height').value));
+ if(!Number.isFinite(w)||!Number.isFinite(h)||w<1||h<1||w>4096||h>4096){alert('幅と高さは1〜4096の範囲で入力してください。');return}
+ const source=processedCanvas,out=document.createElement('canvas');out.width=w;out.height=h;
+ out.getContext('2d').drawImage(source,0,0,source.width,source.height,0,0,w,h);
+ out.toBlob(blob=>{
+  if(!blob){alert('PNGを作成できませんでした。');return}
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`touka_${w}x${h}.png`;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+ },'image/png');
+});
+</script>
+</body></html>
